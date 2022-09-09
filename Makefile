@@ -1,7 +1,8 @@
-CC := g++
-CFLAGS := -Wall
+CC 		:= g++
+CFLAGS 	:= -Wall
 
-TARGET := elenco
+SOURCES := main.cpp
+TARGET 	:= elenco
 
 .PHONY: all clean
 
@@ -10,4 +11,5 @@ all: $(TARGET)
 clean:
 	$(RM) $(TARGET)
 
-$(TARGET):
+$(TARGET): $(SOURCES)
+	$(CC) $(CFLAGS) $(SOURCES) -o $(TARGET)
