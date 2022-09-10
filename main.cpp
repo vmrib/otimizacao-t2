@@ -238,7 +238,12 @@ void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> 
         debug(escolha, "branch_and_bound:escolha");
         if (escolha.limitante >= melhor_escolha.custo && !melhor_escolha.escolhidos.empty() && corte_otimalidade)
         {
-            debug("branch_and_bound: ramo cortado");
+            debug("branch_and_bound: ramo cortado por otimalidade");
+            return;
+        }
+        else if (escolha.escolhidos.size() > n && corte_viabilidade)
+        {
+            debug("branch_and_bound: ramo cortado por viabilidade");
             return;
         }
         else
