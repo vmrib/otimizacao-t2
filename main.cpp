@@ -4,6 +4,7 @@
 #include <set>
 #include <tuple>
 #include <vector>
+#include <utility>
 
 using namespace std;
 
@@ -23,6 +24,8 @@ struct Escolha
     SetAtores faltantes;
     uint custo;
     uint limitante;
+
+    Escolha() : escolhidos(cmp_menor_valor), faltantes(cmp_menor_valor) {}
 };
 
 bool cmp_menor_limitante(const Escolha &e1, const Escolha &e2);
@@ -31,13 +34,94 @@ using SetEscolhas = set<Escolha, decltype(&cmp_menor_limitante)>;
 uint bound_professor(SetAtores &escolhidos, SetAtores &faltantes);
 uint bound_meu(SetAtores &escolhidos, SetAtores &faltantes);
 
-Escolha branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> bound);
+void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> bound);
 
 bool escolha_viavel(Escolha &escolha);
 SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, SetAtores &)> bound);
 
 uint l, m, n;
-SetAtores atores;
+SetAtores atores(cmp_menor_valor);
+Escolha melhor_escolha;
+
+#ifdef DEBUG
+
+void debug(const char *msg);
+void debug(const uint s, const char *nome = ":");
+void debug(const set<uint> &s, const char *nome = ":");
+void debug(const Ator &a, const char *nome = ":");
+void debug(const Escolha &e, const char *nome = ":");
+void debug(const SetAtores &s, const char *nome = ":");
+void debug(const SetEscolhas &s, const char *nome = ":");
+
+void debug(const char *msg)
+{
+    cout << msg << "\n";
+}
+
+void debug(const uint s, const char *nome)
+{
+    cout << nome << ": " << s << "\n";
+}
+
+void debug(const set<uint> &s, const char *nome)
+{
+    cout << nome << ": ( ";
+    for (auto &&e : s)
+        cout << e << " ";
+    cout << ")\n";
+}
+
+void debug(const Ator &a, const char *nome)
+{
+    cout << nome;
+    cout << ": { .id = " << a.id;
+    cout << ", .valor = " << a.valor;
+    cout << ", .grupos = ";
+    debug(a.grupos);
+    cout << " }\n";
+}
+
+void debug(const Escolha &e, const char *nome)
+{
+    cout << nome << ": {";
+    cout << "\n\t.escolhidos = ";
+    debug(e.escolhidos);
+    cout << "\n\t.faltantes = ";
+    debug(e.faltantes);
+    cout << "\n\t.custo = " << e.custo;
+    cout << "\n\t.limitante = " << e.limitante;
+    cout << "\n}\n";
+}
+
+void debug(const SetAtores &s, const char *nome)
+{
+    cout << nome << ": (";
+    for (auto &&e : s)
+    {
+        cout << "\n\t";
+        debug(e);
+    }
+    cout << "\n)\n";
+}
+
+void debug(const SetEscolhas &s, const char *nome)
+{
+    cout << nome << ": (";
+    for (auto &&e : s)
+    {
+        cout << "\n\t";
+        debug(e);
+    }
+    cout << "\n)\n";
+}
+
+#else
+
+template <typename T>
+void debug(const T s, const char *_ = "")
+{
+}
+#endif
 
 int main(int argc, const char *argv[])
 {
@@ -59,15 +143,20 @@ int main(int argc, const char *argv[])
             ator.grupos.insert(g);
         }
 
-        atores.insert(ator);
+        atores.insert(move(ator));
     }
 
-    Escolha escolha_inicial = {
-        .faltantes = atores,
-        .custo = 0,
-    };
+    debug(atores, "main:atores");
 
-    auto melhor_escolha = branch_and_bound(escolha_inicial, &bound_meu);
+    Escolha escolha_inicial;
+    escolha_inicial.faltantes = atores;
+    escolha_inicial.custo = 0;
+
+    melhor_escolha = escolha_inicial;
+
+    branch_and_bound(escolha_inicial, &bound_professor);
+
+    debug(melhor_escolha, "main:melhor_escolha");
 
     if (melhor_escolha.escolhidos.empty())
     {
@@ -102,12 +191,12 @@ int main(int argc, const char *argv[])
 
 bool cmp_menor_valor(const Ator &a1, const Ator &a2)
 {
-    return a1.valor < a2.valor;
+    return a1.valor <= a2.valor;
 }
 
 bool cmp_menor_limitante(const Escolha &e1, const Escolha &e2)
 {
-    return e1.limitante < e2.limitante;
+    return e1.limitante <= e2.limitante;
 }
 
 uint bound_professor(SetAtores &escolhidos, SetAtores &faltantes)
@@ -117,8 +206,13 @@ uint bound_professor(SetAtores &escolhidos, SetAtores &faltantes)
         soma_va += ator.valor;
 
     auto min_vaf = faltantes.begin()->valor;
+    uint limitante = soma_va + (n - escolhidos.size()) * min_vaf;
 
-    return soma_va + (n - escolhidos.size()) * min_vaf;
+    debug(escolhidos, "bound_professor:escolhidos");
+    debug(faltantes, "bound_professor:faltantes");
+    debug(limitante, "bound_professor:limitante");
+
+    return limitante;
 }
 
 uint bound_meu(SetAtores &escolhidos, SetAtores &faltantes)
@@ -133,53 +227,79 @@ uint bound_meu(SetAtores &escolhidos, SetAtores &faltantes)
     for (auto ator = faltantes.begin(); ator != faltantes.end() && i < p_faltantes; ator++, i++)
         soma_vaf += ator->valor;
 
-    return soma_va + soma_vaf;
+    uint limitante = soma_va + soma_vaf;
+
+    debug(escolhidos, "bound_meu:escolhidos");
+    debug(faltantes, "bound_meu:faltantes");
+    debug(limitante, "bound_meu:limitante");
+
+    return limitante;
 }
 
-Escolha branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> bound)
+void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> bound)
 {
-    static Escolha melhor_escolha;
+    // static Escolha melhor_escolha;
 
     if (escolha_viavel(escolha))
     {
+        debug(escolha, "branch_and_bound:escolha (viavel)");
         if (escolha.custo < melhor_escolha.custo || melhor_escolha.escolhidos.empty())
             melhor_escolha = escolha;
+        debug(melhor_escolha, "branch_and_bound:melhor_escolha");
     }
 
     auto prox_escolhas = computar_prox_escolhas(escolha, bound);
+    debug(prox_escolhas, "branch_and_bound:prox_escolhas");
 
     for (auto &escolha : prox_escolhas)
     {
-        if (escolha.custo >= melhor_escolha.custo)
-            return melhor_escolha;
+        debug(escolha, "branch_and_bound:escolha");
+        if (escolha.limitante >= melhor_escolha.custo && !melhor_escolha.escolhidos.empty())
+        {
+            debug("branch_and_bound: ramo cortado");
+            continue;
+        }
         else
-            return branch_and_bound(escolha, bound);
+        {
+            debug("branch_and_bound: recursao na escolha");
+            branch_and_bound(escolha, bound);
+        }
     }
 
-    return melhor_escolha;
+    // return melhor_escolha;
 }
 
 bool escolha_viavel(Escolha &escolha)
 {
+    if (escolha.escolhidos.size() != n)
+        return false;
+
     set<uint> grupos_escolhidos;
 
     for (auto &ator : escolha.escolhidos)
         for (auto &grupo : ator.grupos)
             grupos_escolhidos.insert(grupo);
 
+    debug(grupos_escolhidos.size(), "escolha_viavel:grupos_escolhidos.size()");
     return grupos_escolhidos.size() == l;
 }
 
 SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, SetAtores &)> bound)
 {
-    SetEscolhas proximas;
+
+    SetEscolhas proximas(cmp_menor_limitante);
 
     for (auto &faltante : escolha.faltantes)
     {
+        auto match_ator = [&faltante](const Ator &a)
+        {
+            return a.id == faltante.id;
+        };
+
         Escolha prox = escolha;
 
         prox.escolhidos.insert(faltante);
-        prox.faltantes.erase(faltante);
+        prox.faltantes.erase(find_if(prox.faltantes.begin(), prox.faltantes.end(), match_ator));
 
         prox.custo = 0;
         for (auto &ator : prox.escolhidos)
@@ -187,8 +307,9 @@ SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, 
 
         prox.limitante = bound(prox.escolhidos, prox.faltantes);
 
-        proximas.insert(prox);
+        proximas.insert(move(prox));
     }
 
+    debug(proximas, "computar_prox_escolhas:proximas");
     return proximas;
 }
