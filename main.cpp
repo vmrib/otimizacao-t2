@@ -10,47 +10,101 @@
 
 using namespace std;
 
+// ----------------------------------------------------------------------------------
+// Estrutura que define um ator
 struct Ator
 {
-    uint id;
-    uint valor;
-    set<uint> grupos;
+    uint id;          // "número" do ator (1..m)
+    uint valor;       // valor cobrado
+    set<uint> grupos; // grupos que ele faz parte
 };
 
+/**
+ * A TAD set do C++ armazena seus elementos em ordem. É possível criar um set
+ * com uma função de comparação customizada para seu algoritmo de sort interno.
+ *
+ * Nesse caso, os atores do conjunto estão sendo armazenados em ordem crescente
+ * de valor cobrado. Útil para as funções de bound.
+ */
+
+// Função de comparação para ordenação de SetAtores. Odenação do menor valor para
+// o maior
 bool cmp_menor_valor(const Ator &a1, const Ator &a2);
+
+// Define tipo customizado SetAtores para um conjunto de atores
 using SetAtores = set<Ator, decltype(&cmp_menor_valor)>;
 
+// Estrutura que define uma escolha. Uma escolha pode ser entendida como um nó da
+// árvore de busca do algoritmo Branch and Bound.
 struct Escolha
 {
-    SetAtores escolhidos;
-    SetAtores faltantes;
-    uint custo;
-    uint limitante;
+    SetAtores escolhidos; // conjunto de atores escolhidos
+    SetAtores faltantes;  // conjunto de atores faltantes
+    uint custo;           // custo total dos atores escolhidos
+    uint limitante;       // bound da escolha. Utilizado no Branch and Bound
 
+    // "Burocracia" para garantir que os conjuntos de atores sejam vinculados à
+    // função de comparação cmp_menor_valor
     Escolha() : escolhidos(cmp_menor_valor), faltantes(cmp_menor_valor) {}
 };
 
+// Semelhante ao conjunto SetAtores. O conjunto de escolhas SetEscolhas é um set
+// customizado cujo elementos são ordenados pelo limitante da escolha.
+// Útil ao realizarmos corte or otimalidade.
 bool cmp_menor_limitante(const Escolha &e1, const Escolha &e2);
 using SetEscolhas = set<Escolha, decltype(&cmp_menor_limitante)>;
 
+// ----------------------------------------------------------------------------------
+/**
+ * Função de bound dada pelo professor.
+ * Recebe um conjunto de atores escolhidos e um conjunto de atores faltantes.
+ * Retorna um limitante mínimo para o custo dos atores.
+ */
 uint bound_professor(SetAtores &escolhidos, SetAtores &faltantes);
+
+/**
+ * Função de bound criada por mim.
+ * Recebe um conjunto de atores escolhidos e um conjunto de atores faltantes.
+ * Retorna um limitante mínimo para o custo dos atores.
+ */
 uint bound_meu(SetAtores &escolhidos, SetAtores &faltantes);
 
-void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> bound);
+/**
+ * Função principal do Branch and Bound.
+ * Recebe uma escolha, a qual irá realizar recursão (escolha <=> nó da árvore de busca)
+ * e a função de bound.
+ * Retorna a melhor escolha obtida na variável global melhor_escolha.
+ */
+void branch_and_bound(Escolha escolha,
+                      function<uint(SetAtores &, SetAtores &)> bound);
 
+/**
+ * Verifica se a escolha atual contém uma solução viável.
+ * Retorna true caso contenha, false caso contrário.
+ */
 bool escolha_viavel(Escolha &escolha);
-SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, SetAtores &)> bound);
 
-uint l, m, n;
-SetAtores atores(cmp_menor_valor);
-Escolha melhor_escolha;
+/**
+ * Gera um conjunto com as pŕoximas escolhas para "visitar", dada a escolha atual
+ * Recebe uma escolha e uma função de bound.
+ */
+SetEscolhas computar_prox_escolhas(Escolha &escolha,
+                                   function<uint(SetAtores &, SetAtores &)> bound);
 
-bool corte_otimalidade = true;
-bool corte_viabilidade = true;
+// ----------------------------------------------------------------------------------
+// Variáveis globais
+uint l, m, n;                      // Total de grupos, atores e personagens
+SetAtores atores(cmp_menor_valor); // Conjunto om todos os atores
+Escolha melhor_escolha;            // Melhor escolha obtida
 
-uint nos_arvore = 0;
-uint nos_visitados = 0;
+bool corte_otimalidade = true; // Flag para (des)habilitar corte por otimalidade
+bool corte_viabilidade = true; // Flag para (des)habilitar corte por viabilidade
 
+uint nos_arvore = 0;    // Total de nós gerados por computar_prox_escolhas()
+uint nos_visitados = 0; // Total de nós efetivamente visitados.
+
+// ----------------------------------------------------------------------------------
+// Funcões para debug de código
 #ifdef DEBUG
 
 void debug(const char *msg);
@@ -69,18 +123,21 @@ void debug(const T s, const char *_ = "")
 }
 #endif
 
+// ----------------------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
     int arg;
     opterr = 0;
-    auto b = &bound_meu;
+    auto bound = &bound_meu;
 
+    // getopt() fornecida pelo GNU para parsing de argumentos do programa
+    // https://www.gnu.org/software/libc/manual/html_node/Example-of-Getopt.html
     while ((arg = getopt(argc, argv, "aof")) != -1)
     {
         switch (arg)
         {
         case 'a':
-            b = &bound_professor;
+            bound = &bound_professor;
             break;
 
         case 'o':
@@ -96,6 +153,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Leitura das entradas
     cin >> l >> m >> n;
 
     for (uint i = 1; i <= m; i++)
@@ -119,43 +177,51 @@ int main(int argc, char *argv[])
 
     debug(atores, "main:atores");
 
+    // Inicia "cronômetro" para medição de tempo gasto pelo algoritmo
     auto start = chrono::high_resolution_clock::now();
 
+    // Na escolha inicial (nó raiz) o conjunto dos escolhidos é vazio e
+    // o conjunto dos faltantes contém todos os atores
     Escolha escolha_inicial;
     escolha_inicial.faltantes = atores;
     escolha_inicial.custo = 0;
 
+    // Configuração para início da recursão do branch_and_bound
     melhor_escolha = escolha_inicial;
+    branch_and_bound(escolha_inicial, bound);
 
-    branch_and_bound(escolha_inicial, b);
-
+    // Para o "cronômetro" e armazena o tempo gasto pelo algoritmo
     auto end = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
 
     debug(melhor_escolha, "main:melhor_escolha");
 
+    // Caso a melhor escolha seja igual à escolha inicial, então sabemos que
+    // o branch_and_bound não conseguiu encontrar uma solução viável para o
+    // problema. Na escolha inicial, o conjunto de atores escolhidos é vazio
     if (melhor_escolha.escolhidos.empty())
     {
         cout << "Inviavel" << endl;
         return 1;
     }
 
+    // função lambda para comparação de ids dos atores. O vetor escolhidos contém
+    // os atores escolhidos na ordem crescente de ids
     auto cmp_id = [](const Ator &a1, const Ator &a2)
     {
         return a1.id < a2.id;
     };
-    // set<Ator, decltype(&cmp_id)> escolhidos;
 
+    // Idealmente poderia ter sido criado um conjunto ao invés de um vetor, mas
+    // por algum motivo o compilador dava sempre problema, e não consegui arranjar
+    // outra solução.
     vector<Ator> escolhidos(melhor_escolha.escolhidos.begin(), melhor_escolha.escolhidos.end());
     sort(escolhidos.begin(), escolhidos.end(), cmp_id);
 
-    // for (auto &&ator : melhor_escolha.escolhidos)
-    // {
-    //     escolhidos.insert(ator);
-    // }
-
+    // id do último ator
     auto ultimo_id = escolhidos.rbegin()->id;
 
+    // Imprime atores na ordem dos ids
     for (auto ator = escolhidos.begin(); ator->id != ultimo_id; ator++)
         cout << ator->id << " ";
 
@@ -170,16 +236,28 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+// ----------------------------------------------------------------------------------
+/**
+ * Função utilizada por SetAtores para ordenação dos atores pelo valor cobrado
+ */
 bool cmp_menor_valor(const Ator &a1, const Ator &a2)
 {
     return a1.valor <= a2.valor;
 }
 
+/**
+ * Função utilizada por SetEscolhas para ordenação das escolhas pelo limitante
+ */
 bool cmp_menor_limitante(const Escolha &e1, const Escolha &e2)
 {
     return e1.limitante <= e2.limitante;
 }
 
+/**
+ * Função de bound dada pelo professor.
+ * Recebe um conjunto de atores escolhidos e um conjunto de atores faltantes.
+ * Retorna um limitante mínimo para o custo dos atores.
+ */
 uint bound_professor(SetAtores &escolhidos, SetAtores &faltantes)
 {
     uint soma_va = 0;
@@ -196,8 +274,14 @@ uint bound_professor(SetAtores &escolhidos, SetAtores &faltantes)
     return limitante;
 }
 
+/**
+ * Função de bound criada por mim.
+ * Recebe um conjunto de atores escolhidos e um conjunto de atores faltantes.
+ * Retorna um limitante mínimo para o custo dos atores.
+ */
 uint bound_meu(SetAtores &escolhidos, SetAtores &faltantes)
 {
+    // Detalhes do algoritmo no relatório
     uint soma_va = 0;
     for (auto &ator : escolhidos)
         soma_va += ator.valor;
@@ -217,16 +301,24 @@ uint bound_meu(SetAtores &escolhidos, SetAtores &faltantes)
     return limitante;
 }
 
+/**
+ * Função principal do Branch and Bound.
+ * Recebe uma escolha, a qual irá realizar recursão (escolha <=> nó da árvore de busca)
+ * e a função de bound.
+ * Retorna a melhor escolha obtida na variável global melhor_escolha.
+ */
 void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> bound)
 {
-    // static Escolha melhor_escolha;
-
+    // se for uma escolha viável (ie. contém solução viável) existe possibilidade de
+    // atualizar a melhor escolha obtida até então
     if (escolha_viavel(escolha))
     {
-        debug(escolha, "branch_and_bound:escolha (viavel)");
+        // debug(escolha, "branch_and_bound:escolha (viavel)");
+
+        // se a escolha atual for melhor que a obtida ou ainda não temos a melhor escolha
         if (escolha.custo < melhor_escolha.custo || melhor_escolha.escolhidos.empty())
             melhor_escolha = escolha;
-        debug(melhor_escolha, "branch_and_bound:melhor_escolha");
+        // debug(melhor_escolha, "branch_and_bound:melhor_escolha");
     }
 
     auto prox_escolhas = computar_prox_escolhas(escolha, bound);
@@ -236,6 +328,9 @@ void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> 
     for (auto &escolha : prox_escolhas)
     {
         debug(escolha, "branch_and_bound:escolha");
+
+        // obs: caso a melhor_escolha ainda não tenha sido definida, então devemos obrigatoriamente realizar
+        // a recursão.
         if (escolha.limitante >= melhor_escolha.custo && !melhor_escolha.escolhidos.empty() && corte_otimalidade)
         {
             debug("branch_and_bound: ramo cortado por otimalidade");
@@ -253,15 +348,19 @@ void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> 
             nos_visitados++;
         }
     }
-
-    // return melhor_escolha;
 }
 
+/**
+ * Verifica se a escolha atual contém uma solução viável.
+ * Retorna true caso contenha, false caso contrário.
+ */
 bool escolha_viavel(Escolha &escolha)
 {
+    // só é solução viável se o conjunto dos escolhidos for igual ao número de personagens
     if (escolha.escolhidos.size() != n)
         return false;
 
+    // só é solução viável caso os atores escolhidos contemplem todos os grupos
     set<uint> grupos_escolhidos;
 
     for (auto &ator : escolha.escolhidos)
@@ -272,27 +371,58 @@ bool escolha_viavel(Escolha &escolha)
     return grupos_escolhidos.size() == l;
 }
 
+/**
+ * Gera um conjunto com as pŕoximas escolhas para "visitar", dada a escolha atual
+ * Recebe uma escolha e uma função de bound.
+ */
 SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, SetAtores &)> bound)
 {
-
+    /**
+     * Para computar o conjunto das próximas escolhas inserimos ao conjunto dos escolhidos
+     * um ator do conjunto dos faltantes. Cada escolha é um ator diferente retirado dos
+     * faltantes.
+     * Exemplo:
+     *
+     * escolha atual
+     * escolhidos: {1 2}, faltantes: {3 4 5}
+     *
+     * proximas escolhas:
+     * {
+     *      { escolhidos: {1 2 3}, faltantes: {4 5} }
+     *      { escolhidos: {1 2 4}, faltantes: {3 5} }
+     *      { escolhidos: {1 2 5}, faltantes: {3 4} }
+     * }
+     */
     SetEscolhas proximas(cmp_menor_limitante);
 
     for (auto &faltante : escolha.faltantes)
     {
+        // função lambda para ser usada por find_if
         auto match_ator = [&faltante](const Ator &a)
         {
             return a.id == faltante.id;
         };
 
+        // para a próxima escolha retiramos um ator do conjunto dos faltantes e
+        // inserimos no conjunto dos escolhidos
         Escolha prox = escolha;
 
         prox.escolhidos.insert(faltante);
+
+        /**
+         * Para deletar um ator do conjunto de atores é necessário "casar" o id do ator.
+         * Por isso devemos encontrar o ator cujo id queremos remover e então pasar o
+         *  resultado para o método erase(). erase() recebe um iterador para o elemnto a
+         *  ser deletado. Esse iterador é retornado por find_if().
+         */
         prox.faltantes.erase(find_if(prox.faltantes.begin(), prox.faltantes.end(), match_ator));
 
+        // cálculo do custo da próxima escolha
         prox.custo = 0;
         for (auto &ator : prox.escolhidos)
             prox.custo += ator.valor;
 
+        // cálculo do limitante da próxima escolha
         prox.limitante = bound(prox.escolhidos, prox.faltantes);
 
         proximas.insert(move(prox));
@@ -302,6 +432,7 @@ SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, 
     return proximas;
 }
 
+// Funções para debug
 #ifdef DEBUG
 
 void debug(const char *msg)
