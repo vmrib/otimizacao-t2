@@ -1,9 +1,11 @@
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <set>
 #include <tuple>
 #include <vector>
+#include <unistd.h>
 #include <utility>
 
 using namespace std;
@@ -43,6 +45,12 @@ uint l, m, n;
 SetAtores atores(cmp_menor_valor);
 Escolha melhor_escolha;
 
+bool corte_otimalidade = true;
+bool corte_viabilidade = true;
+
+uint nos_arvore = 0;
+uint nos_visitados = 0;
+
 #ifdef DEBUG
 
 void debug(const char *msg);
@@ -53,68 +61,6 @@ void debug(const Escolha &e, const char *nome = ":");
 void debug(const SetAtores &s, const char *nome = ":");
 void debug(const SetEscolhas &s, const char *nome = ":");
 
-void debug(const char *msg)
-{
-    cout << msg << "\n";
-}
-
-void debug(const uint s, const char *nome)
-{
-    cout << nome << ": " << s << "\n";
-}
-
-void debug(const set<uint> &s, const char *nome)
-{
-    cout << nome << ": ( ";
-    for (auto &&e : s)
-        cout << e << " ";
-    cout << ")\n";
-}
-
-void debug(const Ator &a, const char *nome)
-{
-    cout << nome;
-    cout << ": { .id = " << a.id;
-    cout << ", .valor = " << a.valor;
-    cout << ", .grupos = ";
-    debug(a.grupos);
-    cout << " }\n";
-}
-
-void debug(const Escolha &e, const char *nome)
-{
-    cout << nome << ": {";
-    cout << "\n\t.escolhidos = ";
-    debug(e.escolhidos);
-    cout << "\n\t.faltantes = ";
-    debug(e.faltantes);
-    cout << "\n\t.custo = " << e.custo;
-    cout << "\n\t.limitante = " << e.limitante;
-    cout << "\n}\n";
-}
-
-void debug(const SetAtores &s, const char *nome)
-{
-    cout << nome << ": (";
-    for (auto &&e : s)
-    {
-        cout << "\n\t";
-        debug(e);
-    }
-    cout << "\n)\n";
-}
-
-void debug(const SetEscolhas &s, const char *nome)
-{
-    cout << nome << ": (";
-    for (auto &&e : s)
-    {
-        cout << "\n\t";
-        debug(e);
-    }
-    cout << "\n)\n";
-}
-
 #else
 
 template <typename T>
@@ -123,8 +69,33 @@ void debug(const T s, const char *_ = "")
 }
 #endif
 
-int main(int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
+    int arg;
+    opterr = 0;
+    auto b = &bound_meu;
+
+    while ((arg = getopt(argc, argv, "aof")) != -1)
+    {
+        switch (arg)
+        {
+        case 'a':
+            b = &bound_professor;
+            break;
+
+        case 'o':
+            corte_otimalidade = false;
+            break;
+
+        case 'f':
+            corte_viabilidade = false;
+            break;
+
+        default:
+            break;
+        }
+    }
+
     cin >> l >> m >> n;
 
     for (uint i = 1; i <= m; i++)
@@ -148,13 +119,18 @@ int main(int argc, const char *argv[])
 
     debug(atores, "main:atores");
 
+    auto start = chrono::high_resolution_clock::now();
+
     Escolha escolha_inicial;
     escolha_inicial.faltantes = atores;
     escolha_inicial.custo = 0;
 
     melhor_escolha = escolha_inicial;
 
-    branch_and_bound(escolha_inicial, &bound_professor);
+    branch_and_bound(escolha_inicial, b);
+
+    auto end = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
 
     debug(melhor_escolha, "main:melhor_escolha");
 
@@ -185,6 +161,11 @@ int main(int argc, const char *argv[])
 
     cout << ultimo_id << endl;
     cout << melhor_escolha.custo << endl;
+
+    cerr << "Total de nos da arvore: " << nos_arvore << endl;
+    cerr << "Total de nos visitados: " << nos_visitados << endl;
+    cerr << "Tempo total gasto: " << duration.count();
+    cerr << " us" << endl;
 
     return 0;
 }
@@ -250,19 +231,21 @@ void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> 
 
     auto prox_escolhas = computar_prox_escolhas(escolha, bound);
     debug(prox_escolhas, "branch_and_bound:prox_escolhas");
+    nos_arvore += prox_escolhas.size();
 
     for (auto &escolha : prox_escolhas)
     {
         debug(escolha, "branch_and_bound:escolha");
-        if (escolha.limitante >= melhor_escolha.custo && !melhor_escolha.escolhidos.empty())
+        if (escolha.limitante >= melhor_escolha.custo && !melhor_escolha.escolhidos.empty() && corte_otimalidade)
         {
             debug("branch_and_bound: ramo cortado");
-            continue;
+            return;
         }
         else
         {
             debug("branch_and_bound: recursao na escolha");
             branch_and_bound(escolha, bound);
+            nos_visitados++;
         }
     }
 
@@ -313,3 +296,69 @@ SetEscolhas computar_prox_escolhas(Escolha &escolha, function<uint(SetAtores &, 
     debug(proximas, "computar_prox_escolhas:proximas");
     return proximas;
 }
+
+#ifdef DEBUG
+
+void debug(const char *msg)
+{
+    cout << msg << "\n";
+}
+
+void debug(const uint s, const char *nome)
+{
+    cout << nome << ": " << s << "\n";
+}
+
+void debug(const set<uint> &s, const char *nome)
+{
+    cout << nome << ": ( ";
+    for (auto &&e : s)
+        cout << e << " ";
+    cout << ")\n";
+}
+
+void debug(const Ator &a, const char *nome)
+{
+    cout << nome;
+    cout << ": { .id = " << a.id;
+    cout << ", .valor = " << a.valor;
+    cout << ", .grupos = ";
+    debug(a.grupos);
+    cout << " }\n";
+}
+
+void debug(const Escolha &e, const char *nome)
+{
+    cout << nome << ": {";
+    cout << "\n\t.escolhidos = ";
+    debug(e.escolhidos);
+    cout << "\n\t.faltantes = ";
+    debug(e.faltantes);
+    cout << "\n\t.custo = " << e.custo;
+    cout << "\n\t.limitante = " << e.limitante;
+    cout << "\n}\n";
+}
+
+void debug(const SetAtores &s, const char *nome)
+{
+    cout << nome << ": (";
+    for (auto &&e : s)
+    {
+        cout << "\n\t";
+        debug(e);
+    }
+    cout << "\n)\n";
+}
+
+void debug(const SetEscolhas &s, const char *nome)
+{
+    cout << nome << ": (";
+    for (auto &&e : s)
+    {
+        cout << "\n\t";
+        debug(e);
+    }
+    cout << "\n)\n";
+}
+
+#endif
