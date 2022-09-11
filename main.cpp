@@ -202,31 +202,32 @@ int main(int argc, char *argv[])
     if (melhor_escolha.escolhidos.empty())
     {
         cout << "Inviavel" << endl;
-        return 1;
     }
-
-    // função lambda para comparação de ids dos atores. O vetor escolhidos contém
-    // os atores escolhidos na ordem crescente de ids
-    auto cmp_id = [](const Ator &a1, const Ator &a2)
+    else
     {
-        return a1.id < a2.id;
-    };
+        // função lambda para comparação de ids dos atores. O vetor escolhidos contém
+        // os atores escolhidos na ordem crescente de ids
+        auto cmp_id = [](const Ator &a1, const Ator &a2)
+        {
+            return a1.id < a2.id;
+        };
 
-    // Idealmente poderia ter sido criado um conjunto ao invés de um vetor, mas
-    // por algum motivo o compilador dava sempre problema, e não consegui arranjar
-    // outra solução.
-    vector<Ator> escolhidos(melhor_escolha.escolhidos.begin(), melhor_escolha.escolhidos.end());
-    sort(escolhidos.begin(), escolhidos.end(), cmp_id);
+        // Idealmente poderia ter sido criado um conjunto ao invés de um vetor, mas
+        // por algum motivo o compilador dava sempre problema, e não consegui arranjar
+        // outra solução.
+        vector<Ator> escolhidos(melhor_escolha.escolhidos.begin(), melhor_escolha.escolhidos.end());
+        sort(escolhidos.begin(), escolhidos.end(), cmp_id);
 
-    // id do último ator
-    auto ultimo_id = escolhidos.rbegin()->id;
+        // id do último ator
+        auto ultimo_id = escolhidos.rbegin()->id;
 
-    // Imprime atores na ordem dos ids
-    for (auto ator = escolhidos.begin(); ator->id != ultimo_id; ator++)
-        cout << ator->id << " ";
+        // Imprime atores na ordem dos ids
+        for (auto ator = escolhidos.begin(); ator->id != ultimo_id; ator++)
+            cout << ator->id << " ";
 
-    cout << ultimo_id << endl;
-    cout << melhor_escolha.custo << endl;
+        cout << ultimo_id << endl;
+        cout << melhor_escolha.custo << endl;
+    }
 
     cerr << "Total de nos da arvore: " << nos_arvore << endl;
     cerr << "Total de nos visitados: " << nos_visitados << endl;
@@ -336,7 +337,7 @@ void branch_and_bound(Escolha escolha, function<uint(SetAtores &, SetAtores &)> 
             debug("branch_and_bound: ramo cortado por otimalidade");
             return;
         }
-        else if (escolha.escolhidos.size() > n && corte_viabilidade)
+        else if (escolha.escolhidos.size() > n && !melhor_escolha.escolhidos.empty() && corte_viabilidade)
         {
             debug("branch_and_bound: ramo cortado por viabilidade");
             return;
